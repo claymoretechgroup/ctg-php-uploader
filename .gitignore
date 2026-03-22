@@ -1,0 +1,24 @@
+# Environment (contains credentials)
+.env
+
+# Composer
+vendor/
+
+# Local dependencies
+lib/
+
+# Staging environment
+staging/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

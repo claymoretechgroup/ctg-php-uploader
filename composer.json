@@ -1,0 +1,18 @@
+{
+    "name": "ctg/php-uploader",
+    "description": "Server-side file upload handler with validation and safe naming",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "CTG\\Uploader\\": "src/",
+            "CTG\\Test\\": "lib/ctg-php-test/src/",
+            "CTG\\FnProg\\": "lib/ctg-php-fnprog/src/",
+            "CTG\\ApiClient\\": "lib/ctg-php-api-client/src/"
+        }
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-fileinfo": "*"
+    }
+}
