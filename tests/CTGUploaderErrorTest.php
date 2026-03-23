@@ -82,3 +82,37 @@ CTGTest::init('otherwise — called when no match')
     })
     ->assert('otherwise called', fn($r) => $r, 'otherwise')
     ->start(null, $config);
+
+// ── Edge cases ──────────────────────────────────────────────────
+
+CTGTest::init('lookup — unknown name returns null')
+    ->stage('execute', fn($_) => CTGUploaderError::lookup('NONEXISTENT'))
+    ->assert('returns null', fn($r) => $r, null)
+    ->start(null, $config);
+
+CTGTest::init('lookup — unknown code returns null')
+    ->stage('execute', fn($_) => CTGUploaderError::lookup(9999))
+    ->assert('returns null', fn($r) => $r, null)
+    ->start(null, $config);
+
+CTGTest::init('construct with unknown integer code throws')
+    ->stage('attempt', function($_) {
+        try {
+            new CTGUploaderError(9999);
+            return 'no exception';
+        } catch (\InvalidArgumentException $e) {
+            return 'threw';
+        }
+    })
+    ->assert('throws', fn($r) => $r, 'threw')
+    ->start(null, $config);
+
+CTGTest::init('on — matches by integer code')
+    ->stage('execute', function($_) {
+        $e = new CTGUploaderError('MOVE_FAILED', 'fail');
+        $matched = null;
+        $e->on(2000, function($err) use (&$matched) { $matched = $err->type; });
+        return $matched;
+    })
+    ->assert('handler called', fn($r) => $r, 'MOVE_FAILED')
+    ->start(null, $config);

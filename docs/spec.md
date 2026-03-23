@@ -549,6 +549,26 @@ chmod($fullPath, 0644);
 This prevents uploaded files from being executed directly by the OS,
 even if they somehow bypass extension and MIME checks.
 
+### Client-Side Executable Types (XSS Risk)
+
+The MIME extension map includes types that browsers can execute
+client-side: `text/html`, `application/javascript`, and
+`image/svg+xml` (which can contain `<script>` tags). These are NOT
+on the executable deny list because they are not server-executable
+and may be legitimate upload targets.
+
+If uploaded files are served directly from a web-accessible
+directory, HTML, JS, and SVG uploads can execute in the user's
+browser (stored XSS). Mitigations:
+
+- Configure `allowed_types` to restrict uploads to safe types
+- Serve uploaded files from a separate domain or CDN
+- Set `Content-Disposition: attachment` headers when serving uploads
+- Use a reverse proxy that strips active content headers
+
+Applications that allow arbitrary file types should treat this as
+a deployment concern, not an uploader concern.
+
 ### Future Consideration: Content Scanning
 
 A future version may add optional content scanning that inspects

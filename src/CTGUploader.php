@@ -68,6 +68,15 @@ class CTGUploader {
     // CONSTRUCTOR :: STRING, ARRAY -> $this
     // Creates an uploader with a destination directory and config
     public function __construct(string $destination, array $config = []) {
+        $validKeys = ['allowed_types', 'allowed_extensions', 'max_size', 'naming', 'overwrite', 'create_dir', 'permissions'];
+        $unknownKeys = array_diff(array_keys($config), $validKeys);
+        if (!empty($unknownKeys)) {
+            throw new CTGUploaderError('INVALID_CONFIG',
+                "Unknown config keys: " . implode(', ', $unknownKeys),
+                ['unknown' => array_values($unknownKeys), 'allowed' => $validKeys]
+            );
+        }
+
         $this->_destination = rtrim($destination, '/');
         $this->_allowedTypes = $config['allowed_types'] ?? [];
         $this->_allowedExtensions = array_map('strtolower', $config['allowed_extensions'] ?? []);
@@ -108,7 +117,7 @@ class CTGUploader {
 
         // 2. File exists check
         $tmpName = $file['tmp_name'] ?? '';
-        if (empty($tmpName) || !is_uploaded_file($tmpName)) {
+        if (empty($tmpName) || !$this->_validateFile($tmpName)) {
             return $this->_errorResult('NO_FILE', 'No uploaded file found', [
                 'original_name' => $originalName,
             ]);
@@ -141,8 +150,8 @@ class CTGUploader {
             );
         }
 
-        // 6. MIME-extension cross-validation
-        if (isset(static::$_mimeExtensionMap[$detectedType])) {
+        // 6. MIME-extension cross-validation (skip for extensionless files)
+        if ($extension !== '' && isset(static::$_mimeExtensionMap[$detectedType])) {
             $expectedExtensions = static::$_mimeExtensionMap[$detectedType];
             if (!empty($expectedExtensions) && !in_array($extension, $expectedExtensions, true)) {
                 return $this->_errorResult('TYPE_MISMATCH',
@@ -154,7 +163,7 @@ class CTGUploader {
         }
 
         // 7. File size
-        $fileSize = $file['size'] ?? filesize($tmpName);
+        $fileSize = filesize($tmpName);
         if ($this->_maxSize > 0 && $fileSize > $this->_maxSize) {
             return $this->_errorResult('FILE_TOO_LARGE',
                 "File size {$fileSize} bytes exceeds limit of {$this->_maxSize} bytes",
@@ -168,6 +177,12 @@ class CTGUploader {
         // 9. Generate stored name and check traversal
         $storedName = $this->_generateName($originalName, $extension);
         $destDir = realpath($this->_destination);
+        if ($destDir === false) {
+            throw new CTGUploaderError('DIRECTORY_CREATE_FAILED',
+                "Cannot resolve destination path: {$this->_destination}",
+                ['destination' => $this->_destination]
+            );
+        }
         $fullPath = $destDir . DIRECTORY_SEPARATOR . $storedName;
 
         // Check file exists (for 'original' naming)
@@ -179,7 +194,7 @@ class CTGUploader {
         }
 
         // Move the file
-        if (!move_uploaded_file($tmpName, $fullPath)) {
+        if (!$this->_moveFile($tmpName, $fullPath)) {
             throw new CTGUploaderError('MOVE_FAILED',
                 "Failed to move uploaded file to {$fullPath}",
                 ['original_name' => $originalName, 'destination' => $fullPath]
@@ -264,6 +279,24 @@ class CTGUploader {
 
     /**
      *
+     * Protected Methods
+     *
+     */
+
+    // :: STRING -> BOOL
+    // Validate that a temp file is a real uploaded file
+    protected function _validateFile(string $tmpName): bool {
+        return is_uploaded_file($tmpName);
+    }
+
+    // :: STRING, STRING -> BOOL
+    // Move uploaded file to destination
+    protected function _moveFile(string $tmpName, string $fullPath): bool {
+        return move_uploaded_file($tmpName, $fullPath);
+    }
+
+    /**
+     *
      * Private Methods
      *
      */
@@ -271,11 +304,12 @@ class CTGUploader {
     // :: STRING, STRING -> STRING
     // Generate stored filename based on naming strategy
     private function _generateName(string $originalName, string $extension): string {
+        $suffix = $extension !== '' ? '.' . $extension : '';
         return match($this->_naming) {
-            'uuid' => $this->_generateUuid() . '.' . $extension,
-            'timestamp' => time() . '_' . bin2hex(random_bytes(2)) . '.' . $extension,
+            'uuid' => $this->_generateUuid() . $suffix,
+            'timestamp' => time() . '_' . bin2hex(random_bytes(2)) . $suffix,
             'original' => $this->_sanitizeFilename($originalName, $extension),
-            default => $this->_generateUuid() . '.' . $extension,
+            default => $this->_generateUuid() . $suffix,
         };
     }
 
@@ -298,7 +332,7 @@ class CTGUploader {
         if (empty($name)) {
             $name = 'unnamed';
         }
-        return $name . '.' . $extension;
+        return $extension !== '' ? $name . '.' . $extension : $name;
     }
 
     // :: VOID -> VOID

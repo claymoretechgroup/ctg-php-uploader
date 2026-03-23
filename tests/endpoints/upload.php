@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Test endpoint — receives a real HTTP upload and processes it through CTGUploader
 require_once __DIR__ . '/../../vendor/autoload.php';
 

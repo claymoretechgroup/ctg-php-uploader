@@ -9,7 +9,7 @@ moves files to a destination directory.
 | Property | Type | Description |
 |----------|------|-------------|
 | _destination | STRING | Target directory for stored files |
-| _allowedTypes | [STRING] | Accepted MIME types (empty = accept all) |
+| _allowedTypes | [STRING] | Accepted MIME types (empty = accept all — see XSS note below) |
 | _allowedExtensions | [STRING] | Accepted extensions without dot (empty = accept all) |
 | _maxSize | INT | Max file size in bytes (0 = no limit) |
 | _naming | STRING | Naming strategy: `'uuid'`, `'timestamp'`, `'original'` |
@@ -40,6 +40,16 @@ $uploader = new CTGUploader('/var/www/uploads', [
     'naming' => 'uuid',
 ]);
 ```
+
+**XSS Note:** The MIME extension map includes client-side executable
+types (`text/html`, `application/javascript`, `image/svg+xml`).
+These are not on the server-executable deny list because they may
+be legitimate upload targets. However, if uploaded files are served
+directly from a web-accessible directory, these types can execute
+in the user's browser (stored XSS). Always configure `allowed_types`
+to restrict uploads to the types your application actually needs,
+or serve uploads from a separate domain with
+`Content-Disposition: attachment` headers.
 
 ### CTGUploader.init :: STRING, ARRAY -> ctgUploader
 

@@ -18,180 +18,15 @@ use CTG\FnProg\CTGFnprog;
 $config = ['output' => 'console'];
 $testDir = '/tmp/ctg_uploader_test_' . getmypid();
 
-// Testable subclass — bypasses is_uploaded_file/move_uploaded_file
+// Testable subclass — overrides only the file system operations
+// All validation logic runs in the parent's handle() method
 class TestUploader extends CTGUploader {
-    public function handle(array $file): array {
-        // Call parent but we need to intercept the upload check.
-        // Override by re-implementing handle with copy() instead of move_uploaded_file().
-        return $this->_testHandle($file);
+    protected function _validateFile(string $tmpName): bool {
+        return file_exists($tmpName);
     }
 
-    private function _testHandle(array $file): array {
-        $originalName = $file['name'] ?? '';
-        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-
-        // 1. PHP upload error
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            return $this->_makeErrorResult('UPLOAD_ERROR', 'Upload error', [
-                'original_name' => $originalName,
-                'php_error' => $file['error'] ?? UPLOAD_ERR_NO_FILE,
-            ]);
-        }
-
-        // 2. File exists
-        $tmpName = $file['tmp_name'] ?? '';
-        if (empty($tmpName) || !file_exists($tmpName)) {
-            return $this->_makeErrorResult('NO_FILE', 'No uploaded file found', [
-                'original_name' => $originalName,
-            ]);
-        }
-
-        // 3. Executable deny list
-        if (in_array($extension, static::$_deniedExtensions, true)) {
-            return $this->_makeErrorResult('EXECUTABLE_DENIED',
-                "Extension .{$extension} is not allowed (server-executable)",
-                ['original_name' => $originalName, 'extension' => $extension]
-            );
-        }
-
-        // 4. MIME type
-        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-        $detectedType = $finfo->file($tmpName);
-
-        $allowedTypes = $this->_getAllowedTypes();
-        if (!empty($allowedTypes) && !in_array($detectedType, $allowedTypes, true)) {
-            return $this->_makeErrorResult('INVALID_TYPE',
-                "File type {$detectedType} is not allowed",
-                ['original_name' => $originalName, 'type' => $detectedType, 'allowed' => $allowedTypes]
-            );
-        }
-
-        // 5. Extension
-        $allowedExtensions = $this->_getAllowedExtensions();
-        if (!empty($allowedExtensions) && !in_array($extension, $allowedExtensions, true)) {
-            return $this->_makeErrorResult('INVALID_EXTENSION',
-                "Extension .{$extension} is not allowed",
-                ['original_name' => $originalName, 'extension' => $extension, 'allowed' => $allowedExtensions]
-            );
-        }
-
-        // 6. MIME-extension cross-validation
-        if (isset(static::$_mimeExtensionMap[$detectedType])) {
-            $expected = static::$_mimeExtensionMap[$detectedType];
-            if (!empty($expected) && !in_array($extension, $expected, true)) {
-                return $this->_makeErrorResult('TYPE_MISMATCH',
-                    "MIME type {$detectedType} is not consistent with extension .{$extension}",
-                    ['original_name' => $originalName, 'type' => $detectedType, 'extension' => $extension]
-                );
-            }
-        }
-
-        // 7. File size
-        $fileSize = $file['size'] ?? filesize($tmpName);
-        $maxSize = $this->_getMaxSize();
-        if ($maxSize > 0 && $fileSize > $maxSize) {
-            return $this->_makeErrorResult('FILE_TOO_LARGE',
-                "File size {$fileSize} bytes exceeds limit",
-                ['original_name' => $originalName, 'size' => $fileSize, 'max_size' => $maxSize]
-            );
-        }
-
-        // 8-9. Directory, naming, move (using copy for testing)
-        $this->_testEnsureDirectory();
-        $storedName = $this->_testGenerateName($originalName, $extension);
-        $destDir = realpath($this->_getDestination());
-        $fullPath = $destDir . DIRECTORY_SEPARATOR . $storedName;
-
-        if (!$this->_getOverwrite() && file_exists($fullPath)) {
-            return $this->_makeErrorResult('FILE_EXISTS',
-                "File {$storedName} already exists",
-                ['original_name' => $originalName, 'stored_name' => $storedName]
-            );
-        }
-
-        copy($tmpName, $fullPath);
-        chmod($fullPath, 0644);
-
-        $resolvedPath = realpath($fullPath);
-        if ($resolvedPath === false || !str_starts_with($resolvedPath, $destDir)) {
-            unlink($fullPath);
-            return $this->_makeErrorResult('PATH_TRAVERSAL',
-                'Resolved path escapes destination directory',
-                ['original_name' => $originalName, 'stored_name' => $storedName]
-            );
-        }
-
-        return [
-            'success' => true,
-            'file' => [
-                'original_name' => $originalName,
-                'stored_name' => $storedName,
-                'path' => $resolvedPath,
-                'size' => $fileSize,
-                'type' => $detectedType,
-                'extension' => $extension,
-            ],
-            'error' => null,
-        ];
-    }
-
-    // Expose private methods for testing via protected accessors
-    public function _getAllowedTypes(): array {
-        return (new \ReflectionProperty(CTGUploader::class, '_allowedTypes'))->getValue($this);
-    }
-    public function _getAllowedExtensions(): array {
-        return (new \ReflectionProperty(CTGUploader::class, '_allowedExtensions'))->getValue($this);
-    }
-    public function _getMaxSize(): int {
-        return (new \ReflectionProperty(CTGUploader::class, '_maxSize'))->getValue($this);
-    }
-    public function _getDestination(): string {
-        return (new \ReflectionProperty(CTGUploader::class, '_destination'))->getValue($this);
-    }
-    public function _getOverwrite(): bool {
-        return (new \ReflectionProperty(CTGUploader::class, '_overwrite'))->getValue($this);
-    }
-    public function _testEnsureDirectory(): void {
-        $dest = $this->_getDestination();
-        if (!is_dir($dest)) {
-            $createDir = (new \ReflectionProperty(CTGUploader::class, '_createDir'))->getValue($this);
-            if (!$createDir) {
-                throw new CTGUploaderError('DIRECTORY_CREATE_FAILED', "Directory does not exist: {$dest}");
-            }
-            $perms = (new \ReflectionProperty(CTGUploader::class, '_permissions'))->getValue($this);
-            if (!mkdir($dest, $perms, true)) {
-                throw new CTGUploaderError('DIRECTORY_CREATE_FAILED', "Failed to create: {$dest}");
-            }
-        }
-        if (!is_writable($dest)) {
-            throw new CTGUploaderError('DIRECTORY_NOT_WRITABLE', "Not writable: {$dest}");
-        }
-    }
-    public function _testGenerateName(string $originalName, string $extension): string {
-        $naming = (new \ReflectionProperty(CTGUploader::class, '_naming'))->getValue($this);
-        return match($naming) {
-            'uuid' => $this->_testUuid() . '.' . $extension,
-            'timestamp' => time() . '_' . bin2hex(random_bytes(2)) . '.' . $extension,
-            'original' => $this->_testSanitize($originalName, $extension),
-            default => $this->_testUuid() . '.' . $extension,
-        };
-    }
-    private function _testUuid(): string {
-        $data = random_bytes(16);
-        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
-        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
-        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
-    }
-    private function _testSanitize(string $originalName, string $extension): string {
-        $name = pathinfo($originalName, PATHINFO_FILENAME);
-        $name = preg_replace('/[^a-zA-Z0-9_-]/', '-', $name);
-        $name = preg_replace('/-+/', '-', $name);
-        $name = strtolower(trim($name, '-'));
-        if (empty($name)) $name = 'unnamed';
-        return $name . '.' . $extension;
-    }
-    private function _makeErrorResult(string $type, string $message, array $data = []): array {
-        return ['success' => false, 'file' => null, 'error' => ['type' => $type, 'message' => $message, 'data' => $data]];
+    protected function _moveFile(string $tmpName, string $fullPath): bool {
+        return copy($tmpName, $fullPath);
     }
 }
 
@@ -560,6 +395,106 @@ CTGTest::init('system error — directory create disabled')
         }
     })
     ->assert('throws DIRECTORY_CREATE_FAILED', fn($r) => $r, 'DIRECTORY_CREATE_FAILED')
+    ->start(null, $config);
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIG VALIDATION
+// ═══════════════════════════════════════════════════════════════
+
+CTGTest::init('config — unknown key throws INVALID_CONFIG')
+    ->stage('attempt', function($_) use ($destDir) {
+        try {
+            CTGUploader::init($destDir, ['allowed_type' => ['image/jpeg']]);
+            return 'no exception';
+        } catch (CTGUploaderError $e) {
+            return ['type' => $e->type, 'unknown' => $e->data['unknown']];
+        }
+    })
+    ->assert('throws INVALID_CONFIG', fn($r) => $r['type'], 'INVALID_CONFIG')
+    ->assert('identifies bad key', fn($r) => $r['unknown'], ['allowed_type'])
+    ->start(null, $config);
+
+CTGTest::init('config — multiple unknown keys reported')
+    ->stage('attempt', function($_) use ($destDir) {
+        try {
+            CTGUploader::init($destDir, ['mime_types' => [], 'max_file_size' => 100]);
+            return 'no exception';
+        } catch (CTGUploaderError $e) {
+            return $e->data['unknown'];
+        }
+    })
+    ->assert('both bad keys listed', fn($r) => count($r), 2)
+    ->start(null, $config);
+
+CTGTest::init('config — valid keys accepted')
+    ->stage('create', fn($_) => CTGUploader::init($destDir, [
+        'allowed_types' => ['image/jpeg'],
+        'allowed_extensions' => ['jpg'],
+        'max_size' => 1024,
+        'naming' => 'uuid',
+        'overwrite' => false,
+        'create_dir' => true,
+        'permissions' => 0755,
+    ]))
+    ->assert('returns CTGUploader', fn($r) => $r instanceof CTGUploader, true)
+    ->start(null, $config);
+
+// ═══════════════════════════════════════════════════════════════
+// EXTENSIONLESS FILES
+// ═══════════════════════════════════════════════════════════════
+
+CTGTest::init('handle — extensionless file has no trailing dot')
+    ->stage('execute', fn($_) => TestUploader::init($destDir)
+        ->handle(createTestFile($tmpDir, 'Makefile')))
+    ->assert('success', fn($r) => $r['success'], true)
+    ->assert('no trailing dot', fn($r) => !str_ends_with($r['file']['stored_name'], '.'), true)
+    ->assert('extension is empty', fn($r) => $r['file']['extension'], '')
+    ->start(null, $config);
+
+CTGTest::init('handle — extensionless file with original naming')
+    ->stage('execute', fn($_) => TestUploader::init($destDir, ['naming' => 'original'])
+        ->handle(createTestFile($tmpDir, 'LICENSE')))
+    ->assert('success', fn($r) => $r['success'], true)
+    ->assert('stored as license', fn($r) => $r['file']['stored_name'], 'license')
+    ->start(null, $config);
+
+// ═══════════════════════════════════════════════════════════════
+// PHP UPLOAD ERROR CODES
+// ═══════════════════════════════════════════════════════════════
+
+$uploadErrors = [
+    ['code' => UPLOAD_ERR_INI_SIZE, 'label' => 'INI_SIZE'],
+    ['code' => UPLOAD_ERR_FORM_SIZE, 'label' => 'FORM_SIZE'],
+    ['code' => UPLOAD_ERR_PARTIAL, 'label' => 'PARTIAL'],
+    ['code' => UPLOAD_ERR_NO_FILE, 'label' => 'NO_FILE'],
+    ['code' => UPLOAD_ERR_NO_TMP_DIR, 'label' => 'NO_TMP_DIR'],
+    ['code' => UPLOAD_ERR_CANT_WRITE, 'label' => 'CANT_WRITE'],
+    ['code' => UPLOAD_ERR_EXTENSION, 'label' => 'EXTENSION'],
+];
+
+foreach ($uploadErrors as $err) {
+    CTGTest::init("upload error — {$err['label']} returns UPLOAD_ERROR")
+        ->stage('execute', fn($_) => TestUploader::init($destDir)
+            ->handle(['name' => 'test.txt', 'error' => $err['code'], 'tmp_name' => '', 'size' => 0]))
+        ->assert('success is false', fn($r) => $r['success'], false)
+        ->assert('error type', fn($r) => $r['error']['type'], 'UPLOAD_ERROR')
+        ->assert('php_error code', fn($r) => $r['error']['data']['php_error'], $err['code'])
+        ->start(null, $config);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILE SIZE USES filesize() NOT CLIENT-REPORTED
+// ═══════════════════════════════════════════════════════════════
+
+CTGTest::init('handle — size check uses actual file size, not client-reported')
+    ->stage('execute', function($_) use ($destDir, $tmpDir) {
+        // Create a 100-byte file but report size as 1 byte
+        $file = createTestFile($tmpDir, 'sneaky.txt', str_repeat('x', 100));
+        $file['size'] = 1; // lie about size
+        return TestUploader::init($destDir, ['max_size' => 50])
+            ->handle($file);
+    })
+    ->assert('rejected based on actual size', fn($r) => $r['error']['type'], 'FILE_TOO_LARGE')
     ->start(null, $config);
 
 // ── Cleanup ─────────────────────────────────────────────────────
