@@ -172,6 +172,12 @@ No partial work — the file is not moved.
 ]
 ```
 
+**Security note:** The `path` field contains the full server-side
+filesystem path. It is intended for server-side use (database storage,
+file serving logic) and MUST NOT be exposed directly to clients in
+HTTP responses. Callers can also reconstruct the path from the
+destination directory and `stored_name`.
+
 ### Error Result
 
 ```php

@@ -215,6 +215,11 @@ class CTGUploader {
             );
         }
 
+        // NOTE: 'path' is the full server-side filesystem path. It is
+        // intended for server-side use (database storage, file serving)
+        // and MUST NOT be exposed directly to clients in HTTP responses.
+        // Callers can also reconstruct the path from the destination
+        // directory and stored_name if preferred.
         return [
             'success' => true,
             'file' => [
