@@ -1,5 +1,6 @@
 {
     "name": "ctg/php-uploader",
+    "version": "1.0.0",
     "description": "Server-side file upload handler with validation and safe naming",
     "type": "library",
     "license": "MIT",
