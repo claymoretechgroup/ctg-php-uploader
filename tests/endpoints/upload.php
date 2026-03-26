@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
-// Test endpoint — receives a real HTTP upload and processes it through CTGUploader
+// STAGING/TEST ONLY — NOT FOR PRODUCTION
+// This endpoint has no authentication, accepts configuration via query
+// parameters, and returns internal path details in responses. It exists
+// solely for integration testing in the Docker staging environment.
+// Do not deploy this file to any public-facing server.
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use CTG\Uploader\CTGUploader;

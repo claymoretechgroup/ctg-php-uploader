@@ -196,8 +196,8 @@ class CTGUploader {
         // Move the file
         if (!$this->_moveFile($tmpName, $fullPath)) {
             throw new CTGUploaderError('MOVE_FAILED',
-                "Failed to move uploaded file to {$fullPath}",
-                ['original_name' => $originalName, 'destination' => $fullPath]
+                "Failed to move uploaded file: {$originalName}",
+                ['original_name' => $originalName, 'stored_name' => $storedName]
             );
         }
 
@@ -206,7 +206,8 @@ class CTGUploader {
 
         // Directory traversal check — verify file landed where expected
         $resolvedPath = realpath($fullPath);
-        if ($resolvedPath === false || !str_starts_with($resolvedPath, $destDir)) {
+        $destPrefix = rtrim($destDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if ($resolvedPath === false || !str_starts_with($resolvedPath, $destPrefix)) {
             unlink($fullPath);
             return $this->_errorResult('PATH_TRAVERSAL',
                 'Resolved path escapes destination directory',
@@ -341,22 +342,19 @@ class CTGUploader {
         if (!is_dir($this->_destination)) {
             if (!$this->_createDir) {
                 throw new CTGUploaderError('DIRECTORY_CREATE_FAILED',
-                    "Destination directory does not exist: {$this->_destination}",
-                    ['destination' => $this->_destination]
+                    'Destination directory does not exist and create_dir is disabled'
                 );
             }
             if (!mkdir($this->_destination, $this->_permissions, true)) {
                 throw new CTGUploaderError('DIRECTORY_CREATE_FAILED',
-                    "Failed to create directory: {$this->_destination}",
-                    ['destination' => $this->_destination]
+                    'Failed to create destination directory'
                 );
             }
         }
 
         if (!is_writable($this->_destination)) {
             throw new CTGUploaderError('DIRECTORY_NOT_WRITABLE',
-                "Destination directory is not writable: {$this->_destination}",
-                ['destination' => $this->_destination]
+                'Destination directory is not writable'
             );
         }
     }

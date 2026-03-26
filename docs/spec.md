@@ -551,6 +551,13 @@ even if they somehow bypass extension and MIME checks.
 
 ### Client-Side Executable Types (XSS Risk)
 
+**Important:** The default configuration (`allowed_types: []`) permits
+all file types including HTML, JavaScript, CSS, and SVG. This is by
+design — the uploader does not enforce content policy because
+legitimate use cases (CMS, template uploads, SVG icons) require these
+types. Applications MUST configure `allowed_types` appropriately or
+implement serving-layer mitigations.
+
 The MIME extension map includes types that browsers can execute
 client-side: `text/html`, `application/javascript`, and
 `image/svg+xml` (which can contain `<script>` tags). These are NOT
