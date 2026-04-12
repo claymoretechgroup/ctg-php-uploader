@@ -1,12 +1,15 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
 
 use CTG\Test\CTGTest;
+use CTG\Test\CTGTestState;
+use CTG\Test\Predicates\CTGTestPredicates;
 use CTG\Uploader\CTGUploader;
 use CTG\Uploader\CTGUploaderError;
 use CTG\FnProg\CTGFnprog;
+
+$pipelines = [];
 
 // Tests for CTGUploader — validation, naming, security, normalize
 //
@@ -15,7 +18,6 @@ use CTG\FnProg\CTGFnprog;
 // file-move behavior with copy() for unit testing. Integration tests
 // via a staging endpoint test the real upload path.
 
-$config = ['output' => 'console'];
 $testDir = '/tmp/ctg_uploader_test_' . getmypid();
 
 // Testable subclass — overrides only the file system operations
@@ -85,13 +87,13 @@ $destDir = $testDir . '/uploads';
 // CONSTRUCTION
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('init — static factory')
-    ->stage('create', fn($_) => CTGUploader::init($destDir))
-    ->assert('returns CTGUploader', fn($r) => $r instanceof CTGUploader, true)
-    ->start(null, $config);
+$pipelines[] = CTGTest::init('init — static factory')
+    ->stage('create', fn(CTGTestState $state) => CTGUploader::init($destDir))
+    ->assert('returns CTGUploader', fn(CTGTestState $state) => $state->getSubject() instanceof CTGUploader, CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('init — invalid naming throws')
-    ->stage('attempt', function($_) use ($destDir) {
+$pipelines[] = CTGTest::init('init — invalid naming throws')
+    ->stage('attempt', function(CTGTestState $state) use ($destDir){
         try {
             CTGUploader::init($destDir, ['naming' => 'invalid']);
             return 'no exception';
@@ -99,145 +101,145 @@ CTGTest::init('init — invalid naming throws')
             return $e->type;
         }
     })
-    ->assert('throws INVALID_CONFIG', fn($r) => $r, 'INVALID_CONFIG')
-    ->start(null, $config);
+    ->assert('throws INVALID_CONFIG', fn(CTGTestState $state) => $state->getSubject(), CTGTestPredicates::equals('INVALID_CONFIG'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // NORMALIZE
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('normalize — single file')
-    ->stage('execute', fn($_) => CTGUploader::normalize([
+$pipelines[] = CTGTest::init('normalize — single file')
+    ->stage('execute', fn(CTGTestState $state) => CTGUploader::normalize([
         'name' => 'photo.jpg',
         'type' => 'image/jpeg',
         'tmp_name' => '/tmp/php123',
         'error' => 0,
         'size' => 12345,
     ]))
-    ->assert('returns 1 element', fn($r) => count($r), 1)
-    ->assert('name preserved', fn($r) => $r[0]['name'], 'photo.jpg')
-    ->start(null, $config);
+    ->assert('returns 1 element', fn(CTGTestState $state) => count($state->getSubject()), CTGTestPredicates::equals(1))
+    ->assert('name preserved', fn(CTGTestState $state) => $state->getSubject()[0]['name'], CTGTestPredicates::equals('photo.jpg'))
+    ;
 
-CTGTest::init('normalize — multi-file')
-    ->stage('execute', fn($_) => CTGUploader::normalize([
+$pipelines[] = CTGTest::init('normalize — multi-file')
+    ->stage('execute', fn(CTGTestState $state) => CTGUploader::normalize([
         'name' => ['doc1.pdf', 'doc2.pdf', 'doc3.pdf'],
         'type' => ['application/pdf', 'application/pdf', 'application/pdf'],
         'tmp_name' => ['/tmp/a', '/tmp/b', '/tmp/c'],
         'error' => [0, 0, 0],
         'size' => [100, 200, 300],
     ]))
-    ->assert('returns 3 elements', fn($r) => count($r), 3)
-    ->assert('first name', fn($r) => $r[0]['name'], 'doc1.pdf')
-    ->assert('second name', fn($r) => $r[1]['name'], 'doc2.pdf')
-    ->assert('third size', fn($r) => $r[2]['size'], 300)
-    ->assert('each has all keys', fn($r) => isset($r[0]['name'], $r[0]['type'], $r[0]['tmp_name'], $r[0]['error'], $r[0]['size']), true)
-    ->start(null, $config);
+    ->assert('returns 3 elements', fn(CTGTestState $state) => count($state->getSubject()), CTGTestPredicates::equals(3))
+    ->assert('first name', fn(CTGTestState $state) => $state->getSubject()[0]['name'], CTGTestPredicates::equals('doc1.pdf'))
+    ->assert('second name', fn(CTGTestState $state) => $state->getSubject()[1]['name'], CTGTestPredicates::equals('doc2.pdf'))
+    ->assert('third size', fn(CTGTestState $state) => $state->getSubject()[2]['size'], CTGTestPredicates::equals(300))
+    ->assert('each has all keys', fn(CTGTestState $state) => isset($state->getSubject()[0]['name'], $state->getSubject()[0]['type'], $state->getSubject()[0]['tmp_name'], $state->getSubject()[0]['error'], $state->getSubject()[0]['size']), CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('normalize — empty input')
-    ->stage('execute', fn($_) => CTGUploader::normalize([]))
-    ->assert('returns empty', fn($r) => $r, [])
-    ->start(null, $config);
+$pipelines[] = CTGTest::init('normalize — empty input')
+    ->stage('execute', fn(CTGTestState $state) => CTGUploader::normalize([]))
+    ->assert('returns empty', fn(CTGTestState $state) => $state->getSubject(), CTGTestPredicates::equals([]))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // SUCCESSFUL UPLOAD
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('handle — successful upload with UUID naming')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('handle — successful upload with UUID naming')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestFile($tmpDir, 'document.txt')))
-    ->assert('success is true', fn($r) => $r['success'], true)
-    ->assert('has file metadata', fn($r) => isset($r['file']), true)
-    ->assert('original name preserved', fn($r) => $r['file']['original_name'], 'document.txt')
-    ->assert('stored name is UUID format', fn($r) => (bool)preg_match('/^[a-f0-9-]{36}\.txt$/', $r['file']['stored_name']), true)
-    ->assert('extension is txt', fn($r) => $r['file']['extension'], 'txt')
-    ->assert('error is null', fn($r) => $r['error'], null)
-    ->start(null, $config);
+    ->assert('success is true', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ->assert('has file metadata', fn(CTGTestState $state) => isset($state->getSubject()['file']), CTGTestPredicates::isTrue())
+    ->assert('original name preserved', fn(CTGTestState $state) => $state->getSubject()['file']['original_name'], CTGTestPredicates::equals('document.txt'))
+    ->assert('stored name is UUID format', fn(CTGTestState $state) => (bool)preg_match('/^[a-f0-9-]{36}\.txt$/', $state->getSubject()['file']['stored_name']), CTGTestPredicates::isTrue())
+    ->assert('extension is txt', fn(CTGTestState $state) => $state->getSubject()['file']['extension'], CTGTestPredicates::equals('txt'))
+    ->assert('error is null', fn(CTGTestState $state) => $state->getSubject()['error'], CTGTestPredicates::isNull())
+    ;
 
-CTGTest::init('handle — timestamp naming')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, ['naming' => 'timestamp'])
+$pipelines[] = CTGTest::init('handle — timestamp naming')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, ['naming' => 'timestamp'])
         ->handle(createTestFile($tmpDir, 'test.txt')))
-    ->assert('stored name matches timestamp pattern', fn($r) => (bool)preg_match('/^\d+_[a-f0-9]{4}\.txt$/', $r['file']['stored_name']), true)
-    ->start(null, $config);
+    ->assert('stored name matches timestamp pattern', fn(CTGTestState $state) => (bool)preg_match('/^\d+_[a-f0-9]{4}\.txt$/', $state->getSubject()['file']['stored_name']), CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('handle — original naming sanitizes')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, ['naming' => 'original'])
+$pipelines[] = CTGTest::init('handle — original naming sanitizes')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, ['naming' => 'original'])
         ->handle(createTestFile($tmpDir, 'My Weird (File) Name!.txt')))
-    ->assert('sanitized name', fn($r) => $r['file']['stored_name'], 'my-weird-file-name.txt')
-    ->start(null, $config);
+    ->assert('sanitized name', fn(CTGTestState $state) => $state->getSubject()['file']['stored_name'], CTGTestPredicates::equals('my-weird-file-name.txt'))
+    ;
 
-CTGTest::init('handle — creates destination directory')
-    ->stage('execute', fn($_) => TestUploader::init($destDir . '/subdir/deep')
+$pipelines[] = CTGTest::init('handle — creates destination directory')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir . '/subdir/deep')
         ->handle(createTestFile($tmpDir, 'test.txt')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->assert('directory created', fn($r) => is_dir(dirname($r['file']['path'])), true)
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ->assert('directory created', fn(CTGTestState $state) => is_dir(dirname($state->getSubject()['file']['path'])), CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('handle — file permissions set to 0644')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('handle — file permissions set to 0644')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestFile($tmpDir, 'perms.txt')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->assert('permissions are 0644', fn($r) => decoct(fileperms($r['file']['path']) & 0777), '644')
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ->assert('permissions are 0644', fn(CTGTestState $state) => decoct(fileperms($state->getSubject()['file']['path']) & 0777), CTGTestPredicates::equals('644'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // VALIDATION ERRORS
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('handle — PHP upload error')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('handle — PHP upload error')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(['name' => 'test.txt', 'error' => UPLOAD_ERR_INI_SIZE, 'tmp_name' => '', 'size' => 0]))
-    ->assert('success is false', fn($r) => $r['success'], false)
-    ->assert('error type', fn($r) => $r['error']['type'], 'UPLOAD_ERROR')
-    ->start(null, $config);
+    ->assert('success is false', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isFalse())
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('UPLOAD_ERROR'))
+    ;
 
-CTGTest::init('handle — no file')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('handle — no file')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(['name' => 'test.txt', 'error' => UPLOAD_ERR_OK, 'tmp_name' => '', 'size' => 0]))
-    ->assert('error type', fn($r) => $r['error']['type'], 'NO_FILE')
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('NO_FILE'))
+    ;
 
-CTGTest::init('handle — invalid MIME type')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('handle — invalid MIME type')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_types' => ['image/jpeg', 'image/png']
         ])->handle(createTestFile($tmpDir, 'test.txt')))
-    ->assert('error type', fn($r) => $r['error']['type'], 'INVALID_TYPE')
-    ->assert('has allowed list', fn($r) => $r['error']['data']['allowed'], ['image/jpeg', 'image/png'])
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('INVALID_TYPE'))
+    ->assert('has allowed list', fn(CTGTestState $state) => $state->getSubject()['error']['data']['allowed'], CTGTestPredicates::equals(['image/jpeg', 'image/png']))
+    ;
 
-CTGTest::init('handle — invalid extension')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('handle — invalid extension')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_extensions' => ['jpg', 'png']
         ])->handle(createTestFile($tmpDir, 'test.txt')))
-    ->assert('error type', fn($r) => $r['error']['type'], 'INVALID_EXTENSION')
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('INVALID_EXTENSION'))
+    ;
 
-CTGTest::init('handle — file too large')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('handle — file too large')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'max_size' => 5
         ])->handle(createTestFile($tmpDir, 'big.txt', str_repeat('x', 100))))
-    ->assert('error type', fn($r) => $r['error']['type'], 'FILE_TOO_LARGE')
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('FILE_TOO_LARGE'))
+    ;
 
-CTGTest::init('handle — file exists with overwrite off')
-    ->stage('setup', function($_) use ($destDir, $tmpDir) {
+$pipelines[] = CTGTest::init('handle — file exists with overwrite off')
+    ->stage('setup', function(CTGTestState $state) use ($destDir, $tmpDir){
         // Create existing file
         @mkdir($destDir, 0755, true);
         file_put_contents($destDir . '/existing.txt', 'already here');
         return TestUploader::init($destDir, ['naming' => 'original', 'overwrite' => false])
             ->handle(createTestFile($tmpDir, 'existing.txt'));
     })
-    ->assert('error type is FILE_EXISTS', fn($r) => $r['error']['type'] === 'FILE_EXISTS', true)
-    ->start(null, $config);
+    ->assert('error type is FILE_EXISTS', fn(CTGTestState $state) => $state->getSubject()['error']['type'] === 'FILE_EXISTS', CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('handle — file exists with overwrite on succeeds')
-    ->stage('setup', function($_) use ($destDir, $tmpDir) {
+$pipelines[] = CTGTest::init('handle — file exists with overwrite on succeeds')
+    ->stage('setup', function(CTGTestState $state) use ($destDir, $tmpDir){
         @mkdir($destDir, 0755, true);
         file_put_contents($destDir . '/overwrite-me.txt', 'old content');
         return TestUploader::init($destDir, ['naming' => 'original', 'overwrite' => true])
             ->handle(createTestFile($tmpDir, 'overwrite-me.txt', 'new content'));
     })
-    ->assert('success', fn($r) => $r['success'], true)
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // SECURITY — EXECUTABLE DENY LIST
@@ -246,56 +248,56 @@ CTGTest::init('handle — file exists with overwrite on succeeds')
 $deniedExts = ['php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'phps', 'cgi', 'pl', 'sh', 'bash', 'htaccess', 'htpasswd'];
 
 foreach ($deniedExts as $ext) {
-    CTGTest::init("deny list — .{$ext} rejected")
-        ->stage('execute', fn($_) => TestUploader::init($destDir)
+    $pipelines[] = CTGTest::init("deny list — .{$ext} rejected")
+        ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
             ->handle(createTestFile($tmpDir, "malicious.{$ext}")))
-        ->assert('error type', fn($r) => $r['error']['type'], 'EXECUTABLE_DENIED')
-        ->start(null, $config);
+        ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('EXECUTABLE_DENIED'))
+        ;
 }
 
-CTGTest::init('deny list — cannot override via allowed_extensions')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('deny list — cannot override via allowed_extensions')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_extensions' => ['php', 'txt']
         ])->handle(createTestFile($tmpDir, 'script.php')))
-    ->assert('still denied', fn($r) => $r['error']['type'], 'EXECUTABLE_DENIED')
-    ->start(null, $config);
+    ->assert('still denied', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('EXECUTABLE_DENIED'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // SECURITY — MIME-EXTENSION CROSS-VALIDATION
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('type mismatch — JPEG content with .txt extension')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('type mismatch — JPEG content with .txt extension')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestJpeg($tmpDir, 'sneaky.txt')))
-    ->assert('error type', fn($r) => $r['error']['type'], 'TYPE_MISMATCH')
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('TYPE_MISMATCH'))
+    ;
 
-CTGTest::init('type mismatch — PNG content with .jpg extension')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('type mismatch — PNG content with .jpg extension')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestPng($tmpDir, 'fake.jpg')))
-    ->assert('error type', fn($r) => $r['error']['type'], 'TYPE_MISMATCH')
-    ->start(null, $config);
+    ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('TYPE_MISMATCH'))
+    ;
 
-CTGTest::init('type match — JPEG content with .jpg extension passes')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('type match — JPEG content with .jpg extension passes')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_types' => ['image/jpeg']
         ])->handle(createTestJpeg($tmpDir, 'photo.jpg')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('type match — JPEG content with .jpeg extension passes')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('type match — JPEG content with .jpeg extension passes')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_types' => ['image/jpeg']
         ])->handle(createTestJpeg($tmpDir, 'photo.jpeg')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // SECURITY — MIME DETECTION USES finfo, NOT CLIENT TYPE
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('MIME detection — client-reported type ignored')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('MIME detection — client-reported type ignored')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'allowed_types' => ['image/jpeg']
         ])->handle([
             'name' => 'fake.jpg',
@@ -309,64 +311,64 @@ CTGTest::init('MIME detection — client-reported type ignored')
             'error' => UPLOAD_ERR_OK,
             'size' => 18,
         ]))
-    ->assert('rejected — finfo detects text, not jpeg', fn($r) => $r['success'], false)
-    ->assert('error type is INVALID_TYPE', fn($r) => $r['error']['type'], 'INVALID_TYPE')
-    ->start(null, $config);
+    ->assert('rejected — finfo detects text, not jpeg', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isFalse())
+    ->assert('error type is INVALID_TYPE', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('INVALID_TYPE'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // HANDLE MULTIPLE
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('handleMultiple — processes each independently')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, [
+$pipelines[] = CTGTest::init('handleMultiple — processes each independently')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, [
             'max_size' => 50,
         ])->handleMultiple([
             createTestFile($tmpDir, 'small.txt', 'hi'),
             createTestFile($tmpDir, 'big.txt', str_repeat('x', 100)),
             createTestFile($tmpDir, 'also-small.txt', 'hey'),
         ]))
-    ->assert('3 results', fn($r) => count($r), 3)
-    ->assert('first success', fn($r) => $r[0]['success'], true)
-    ->assert('second failed (too large)', fn($r) => $r[1]['error']['type'], 'FILE_TOO_LARGE')
-    ->assert('third success', fn($r) => $r[2]['success'], true)
-    ->start(null, $config);
+    ->assert('3 results', fn(CTGTestState $state) => count($state->getSubject()), CTGTestPredicates::equals(3))
+    ->assert('first success', fn(CTGTestState $state) => $state->getSubject()[0]['success'], CTGTestPredicates::isTrue())
+    ->assert('second failed (too large)', fn(CTGTestState $state) => $state->getSubject()[1]['error']['type'], CTGTestPredicates::equals('FILE_TOO_LARGE'))
+    ->assert('third success', fn(CTGTestState $state) => $state->getSubject()[2]['success'], CTGTestPredicates::isTrue())
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // RESULT STRUCTURE
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('success result — has all keys')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('success result — has all keys')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestFile($tmpDir, 'complete.txt')))
-    ->assert('has success', fn($r) => isset($r['success']), true)
-    ->assert('has file', fn($r) => isset($r['file']), true)
-    ->assert('has error', fn($r) => array_key_exists('error', $r), true)
-    ->assert('file has original_name', fn($r) => isset($r['file']['original_name']), true)
-    ->assert('file has stored_name', fn($r) => isset($r['file']['stored_name']), true)
-    ->assert('file has path', fn($r) => isset($r['file']['path']), true)
-    ->assert('file has size', fn($r) => isset($r['file']['size']), true)
-    ->assert('file has type', fn($r) => isset($r['file']['type']), true)
-    ->assert('file has extension', fn($r) => isset($r['file']['extension']), true)
-    ->start(null, $config);
+    ->assert('has success', fn(CTGTestState $state) => isset($state->getSubject()['success']), CTGTestPredicates::isTrue())
+    ->assert('has file', fn(CTGTestState $state) => isset($state->getSubject()['file']), CTGTestPredicates::isTrue())
+    ->assert('has error', fn(CTGTestState $state) => array_key_exists('error', $state->getSubject()), CTGTestPredicates::isTrue())
+    ->assert('file has original_name', fn(CTGTestState $state) => isset($state->getSubject()['file']['original_name']), CTGTestPredicates::isTrue())
+    ->assert('file has stored_name', fn(CTGTestState $state) => isset($state->getSubject()['file']['stored_name']), CTGTestPredicates::isTrue())
+    ->assert('file has path', fn(CTGTestState $state) => isset($state->getSubject()['file']['path']), CTGTestPredicates::isTrue())
+    ->assert('file has size', fn(CTGTestState $state) => isset($state->getSubject()['file']['size']), CTGTestPredicates::isTrue())
+    ->assert('file has type', fn(CTGTestState $state) => isset($state->getSubject()['file']['type']), CTGTestPredicates::isTrue())
+    ->assert('file has extension', fn(CTGTestState $state) => isset($state->getSubject()['file']['extension']), CTGTestPredicates::isTrue())
+    ;
 
-CTGTest::init('error result — has all keys')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, ['max_size' => 1])
+$pipelines[] = CTGTest::init('error result — has all keys')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, ['max_size' => 1])
         ->handle(createTestFile($tmpDir, 'err.txt', 'too long')))
-    ->assert('has success', fn($r) => isset($r['success']), true)
-    ->assert('success is false', fn($r) => $r['success'], false)
-    ->assert('file is null', fn($r) => $r['file'], null)
-    ->assert('has error', fn($r) => isset($r['error']), true)
-    ->assert('error has type', fn($r) => isset($r['error']['type']), true)
-    ->assert('error has message', fn($r) => isset($r['error']['message']), true)
-    ->assert('error has data', fn($r) => isset($r['error']['data']), true)
-    ->start(null, $config);
+    ->assert('has success', fn(CTGTestState $state) => isset($state->getSubject()['success']), CTGTestPredicates::isTrue())
+    ->assert('success is false', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isFalse())
+    ->assert('file is null', fn(CTGTestState $state) => $state->getSubject()['file'], CTGTestPredicates::isNull())
+    ->assert('has error', fn(CTGTestState $state) => isset($state->getSubject()['error']), CTGTestPredicates::isTrue())
+    ->assert('error has type', fn(CTGTestState $state) => isset($state->getSubject()['error']['type']), CTGTestPredicates::isTrue())
+    ->assert('error has message', fn(CTGTestState $state) => isset($state->getSubject()['error']['message']), CTGTestPredicates::isTrue())
+    ->assert('error has data', fn(CTGTestState $state) => isset($state->getSubject()['error']['data']), CTGTestPredicates::isTrue())
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // CTGFnprog INTEGRATION
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('CTGFnprog — filter successful uploads')
-    ->stage('execute', fn($_) => CTGFnprog::pipe([
+$pipelines[] = CTGTest::init('CTGFnprog — filter successful uploads')
+    ->stage('execute', fn(CTGTestState $state) => CTGFnprog::pipe([
         fn($_) => TestUploader::init($destDir, ['max_size' => 50])
             ->handleMultiple([
                 createTestFile($tmpDir, 'ok1.txt', 'hi'),
@@ -377,15 +379,15 @@ CTGTest::init('CTGFnprog — filter successful uploads')
         CTGFnprog::pluck('file'),
         CTGFnprog::pluck('original_name'),
     ])(null))
-    ->assert('only successful names', fn($r) => $r, ['ok1.txt', 'ok2.txt'])
-    ->start(null, $config);
+    ->assert('only successful names', fn(CTGTestState $state) => $state->getSubject(), CTGTestPredicates::equals(['ok1.txt', 'ok2.txt']))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // SYSTEM ERRORS (THROWN)
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('system error — directory create disabled')
-    ->stage('attempt', function($_) use ($tmpDir) {
+$pipelines[] = CTGTest::init('system error — directory create disabled')
+    ->stage('attempt', function(CTGTestState $state) use ($tmpDir){
         try {
             TestUploader::init('/nonexistent/path/that/wont/work', ['create_dir' => false])
                 ->handle(createTestFile($tmpDir, 'test.txt'));
@@ -394,15 +396,15 @@ CTGTest::init('system error — directory create disabled')
             return $e->type;
         }
     })
-    ->assert('throws DIRECTORY_CREATE_FAILED', fn($r) => $r, 'DIRECTORY_CREATE_FAILED')
-    ->start(null, $config);
+    ->assert('throws DIRECTORY_CREATE_FAILED', fn(CTGTestState $state) => $state->getSubject(), CTGTestPredicates::equals('DIRECTORY_CREATE_FAILED'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG VALIDATION
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('config — unknown key throws INVALID_CONFIG')
-    ->stage('attempt', function($_) use ($destDir) {
+$pipelines[] = CTGTest::init('config — unknown key throws INVALID_CONFIG')
+    ->stage('attempt', function(CTGTestState $state) use ($destDir){
         try {
             CTGUploader::init($destDir, ['allowed_type' => ['image/jpeg']]);
             return 'no exception';
@@ -410,12 +412,12 @@ CTGTest::init('config — unknown key throws INVALID_CONFIG')
             return ['type' => $e->type, 'unknown' => $e->data['unknown']];
         }
     })
-    ->assert('throws INVALID_CONFIG', fn($r) => $r['type'], 'INVALID_CONFIG')
-    ->assert('identifies bad key', fn($r) => $r['unknown'], ['allowed_type'])
-    ->start(null, $config);
+    ->assert('throws INVALID_CONFIG', fn(CTGTestState $state) => $state->getSubject()['type'], CTGTestPredicates::equals('INVALID_CONFIG'))
+    ->assert('identifies bad key', fn(CTGTestState $state) => $state->getSubject()['unknown'], CTGTestPredicates::equals(['allowed_type']))
+    ;
 
-CTGTest::init('config — multiple unknown keys reported')
-    ->stage('attempt', function($_) use ($destDir) {
+$pipelines[] = CTGTest::init('config — multiple unknown keys reported')
+    ->stage('attempt', function(CTGTestState $state) use ($destDir){
         try {
             CTGUploader::init($destDir, ['mime_types' => [], 'max_file_size' => 100]);
             return 'no exception';
@@ -423,11 +425,11 @@ CTGTest::init('config — multiple unknown keys reported')
             return $e->data['unknown'];
         }
     })
-    ->assert('both bad keys listed', fn($r) => count($r), 2)
-    ->start(null, $config);
+    ->assert('both bad keys listed', fn(CTGTestState $state) => count($state->getSubject()), CTGTestPredicates::equals(2))
+    ;
 
-CTGTest::init('config — valid keys accepted')
-    ->stage('create', fn($_) => CTGUploader::init($destDir, [
+$pipelines[] = CTGTest::init('config — valid keys accepted')
+    ->stage('create', fn(CTGTestState $state) => CTGUploader::init($destDir, [
         'allowed_types' => ['image/jpeg'],
         'allowed_extensions' => ['jpg'],
         'max_size' => 1024,
@@ -436,27 +438,27 @@ CTGTest::init('config — valid keys accepted')
         'create_dir' => true,
         'permissions' => 0755,
     ]))
-    ->assert('returns CTGUploader', fn($r) => $r instanceof CTGUploader, true)
-    ->start(null, $config);
+    ->assert('returns CTGUploader', fn(CTGTestState $state) => $state->getSubject() instanceof CTGUploader, CTGTestPredicates::isTrue())
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // EXTENSIONLESS FILES
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('handle — extensionless file has no trailing dot')
-    ->stage('execute', fn($_) => TestUploader::init($destDir)
+$pipelines[] = CTGTest::init('handle — extensionless file has no trailing dot')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
         ->handle(createTestFile($tmpDir, 'Makefile')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->assert('no trailing dot', fn($r) => !str_ends_with($r['file']['stored_name'], '.'), true)
-    ->assert('extension is empty', fn($r) => $r['file']['extension'], '')
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ->assert('no trailing dot', fn(CTGTestState $state) => !str_ends_with($state->getSubject()['file']['stored_name'], '.'), CTGTestPredicates::isTrue())
+    ->assert('extension is empty', fn(CTGTestState $state) => $state->getSubject()['file']['extension'], CTGTestPredicates::equals(''))
+    ;
 
-CTGTest::init('handle — extensionless file with original naming')
-    ->stage('execute', fn($_) => TestUploader::init($destDir, ['naming' => 'original'])
+$pipelines[] = CTGTest::init('handle — extensionless file with original naming')
+    ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir, ['naming' => 'original'])
         ->handle(createTestFile($tmpDir, 'LICENSE')))
-    ->assert('success', fn($r) => $r['success'], true)
-    ->assert('stored as license', fn($r) => $r['file']['stored_name'], 'license')
-    ->start(null, $config);
+    ->assert('success', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isTrue())
+    ->assert('stored as license', fn(CTGTestState $state) => $state->getSubject()['file']['stored_name'], CTGTestPredicates::equals('license'))
+    ;
 
 // ═══════════════════════════════════════════════════════════════
 // PHP UPLOAD ERROR CODES
@@ -473,30 +475,33 @@ $uploadErrors = [
 ];
 
 foreach ($uploadErrors as $err) {
-    CTGTest::init("upload error — {$err['label']} returns UPLOAD_ERROR")
-        ->stage('execute', fn($_) => TestUploader::init($destDir)
+    $pipelines[] = CTGTest::init("upload error — {$err['label']} returns UPLOAD_ERROR")
+        ->stage('execute', fn(CTGTestState $state) => TestUploader::init($destDir)
             ->handle(['name' => 'test.txt', 'error' => $err['code'], 'tmp_name' => '', 'size' => 0]))
-        ->assert('success is false', fn($r) => $r['success'], false)
-        ->assert('error type', fn($r) => $r['error']['type'], 'UPLOAD_ERROR')
-        ->assert('php_error code', fn($r) => $r['error']['data']['php_error'], $err['code'])
-        ->start(null, $config);
+        ->assert('success is false', fn(CTGTestState $state) => $state->getSubject()['success'], CTGTestPredicates::isFalse())
+        ->assert('error type', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('UPLOAD_ERROR'))
+        ->assert('php_error code', fn(CTGTestState $state) => $state->getSubject()['error']['data']['php_error'], CTGTestPredicates::equals($err['code']))
+        ;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // FILE SIZE USES filesize() NOT CLIENT-REPORTED
 // ═══════════════════════════════════════════════════════════════
 
-CTGTest::init('handle — size check uses actual file size, not client-reported')
-    ->stage('execute', function($_) use ($destDir, $tmpDir) {
+$pipelines[] = CTGTest::init('handle — size check uses actual file size, not client-reported')
+    ->stage('execute', function(CTGTestState $state) use ($destDir, $tmpDir){
         // Create a 100-byte file but report size as 1 byte
         $file = createTestFile($tmpDir, 'sneaky.txt', str_repeat('x', 100));
         $file['size'] = 1; // lie about size
         return TestUploader::init($destDir, ['max_size' => 50])
             ->handle($file);
     })
-    ->assert('rejected based on actual size', fn($r) => $r['error']['type'], 'FILE_TOO_LARGE')
-    ->start(null, $config);
+    ->assert('rejected based on actual size', fn(CTGTestState $state) => $state->getSubject()['error']['type'], CTGTestPredicates::equals('FILE_TOO_LARGE'))
+    ;
 
 // ── Cleanup ─────────────────────────────────────────────────────
-// Clean up test files
-exec("rm -rf {$testDir}");
+// Deferred to shutdown — in v2.2 the file returns pipelines for the
+// runner to execute later, so the test directory must survive load time.
+register_shutdown_function(fn() => exec("rm -rf {$testDir}"));
+
+return $pipelines;

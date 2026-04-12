@@ -54,7 +54,15 @@ class CTGUploaderError extends \Exception {
     // :: STRING|INT, (ctgUploaderError -> VOID) -> $this
     // Handle error if it matches the given type. Chainable.
     public function on(string|int $type, callable $handler): static {
-        $code = is_string($type) ? (self::TYPES[$type] ?? null) : $type;
+        if (is_string($type)) {
+            $code = self::TYPES[$type]
+                ?? throw new \InvalidArgumentException("Unknown CTGUploaderError type for on(): {$type}");
+        } else {
+            $code = $type;
+            if (self::lookup($type) === null) {
+                throw new \InvalidArgumentException("Unknown CTGUploaderError code for on(): {$type}");
+            }
+        }
 
         if (!$this->_handled && $this->getCode() === $code) {
             $handler($this);
