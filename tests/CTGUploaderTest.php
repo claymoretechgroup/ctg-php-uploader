@@ -7,7 +7,6 @@ use CTG\Test\CTGTestState;
 use CTG\Test\Predicates\CTGTestPredicates;
 use CTG\Uploader\CTGUploader;
 use CTG\Uploader\CTGUploaderError;
-use CTG\FnProg\CTGFnprog;
 
 $pipelines = [];
 
@@ -361,25 +360,6 @@ $pipelines[] = CTGTest::init('error result — has all keys')
     ->assert('error has type', fn(CTGTestState $state) => isset($state->getSubject()['error']['type']), CTGTestPredicates::isTrue())
     ->assert('error has message', fn(CTGTestState $state) => isset($state->getSubject()['error']['message']), CTGTestPredicates::isTrue())
     ->assert('error has data', fn(CTGTestState $state) => isset($state->getSubject()['error']['data']), CTGTestPredicates::isTrue())
-    ;
-
-// ═══════════════════════════════════════════════════════════════
-// CTGFnprog INTEGRATION
-// ═══════════════════════════════════════════════════════════════
-
-$pipelines[] = CTGTest::init('CTGFnprog — filter successful uploads')
-    ->stage('execute', fn(CTGTestState $state) => CTGFnprog::pipe([
-        fn($_) => TestUploader::init($destDir, ['max_size' => 50])
-            ->handleMultiple([
-                createTestFile($tmpDir, 'ok1.txt', 'hi'),
-                createTestFile($tmpDir, 'toobig.txt', str_repeat('x', 100)),
-                createTestFile($tmpDir, 'ok2.txt', 'hey'),
-            ]),
-        CTGFnprog::filter(fn($r) => $r['success']),
-        CTGFnprog::pluck('file'),
-        CTGFnprog::pluck('original_name'),
-    ])(null))
-    ->assert('only successful names', fn(CTGTestState $state) => $state->getSubject(), CTGTestPredicates::equals(['ok1.txt', 'ok2.txt']))
     ;
 
 // ═══════════════════════════════════════════════════════════════

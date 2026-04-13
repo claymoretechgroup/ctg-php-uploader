@@ -8,7 +8,6 @@
         "psr-4": {
             "CTG\\Uploader\\": "src/",
             "CTG\\Test\\": "lib/ctg-php-test/src/",
-            "CTG\\FnProg\\": "lib/ctg-php-fnprog/src/",
             "CTG\\ApiClient\\": "lib/ctg-php-api-client/src/"
         }
     },
